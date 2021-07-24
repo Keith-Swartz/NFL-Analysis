@@ -1,0 +1,164 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Mod 4 Assignment 2 - Win Probability Assignment
+## Keith Swartz
+
+```{r include=FALSE}
+library(tidyverse)
+library(tidymodels)
+
+pbp2018 = readRDS(gzcon(url(
+"https://github.com/guga31bb/nflfastR-data/blob/master/data/play_by_play_2018.rds?raw=true")))
+pbp2019 = readRDS(gzcon(url(
+"https://github.com/guga31bb/nflfastR-data/blob/master/data/play_by_play_2019.rds?raw=true")))
+
+pbpfull = bind_rows(pbp2018,pbp2019)
+
+rm(pbp2018,pbp2019,bpfull)
+
+
+```
+
+### Task 1
+
+
+
+```{r include=FALSE}
+pbpfull= pbpfull %>% mutate( winteam = ifelse(result>0, print(home_team),print(away_team)))%>%
+  mutate(poswins = ifelse(winteam==posteam,"PosWins","PosLoses"))%>%
+  mutate(poswins = fct_relevel(poswins, "PosLoses")) %>%
+  mutate(posspread= ifelse(posteam==home_team,spread_line,-1*spread_line))
+  
+cols = c("qtr","down","poswins")
+pbpfull = pbpfull %>% mutate_at(cols,as_factor)
+
+pbpfull=drop_na(pbpfull,yardline_100, game_seconds_remaining, down, posspread,score_differential)
+
+pbpfull=filter(pbpfull,qtr!=5)
+pbpfull=filter(pbpfull,result!=0)
+
+```
+
+### Task 2
+
+```{r}
+mod1 = glm(poswins ~ yardline_100 + game_seconds_remaining + down +
+ydstogo + posspread + score_differential, data = pbpfull, family = "binomial")
+
+options(scipen = 999)
+summary(mod1)
+```
+
+### Task 3
+
+All of the variables except for game_seconds_remaining are significant predictors of the probability that the team with the ball last wins the game. The amount of time left in a game has much less relevance to who has the ball compared to the other variables, so it makes sense why it was deemed insignificant. As each down progresses, there is a better chance that the team that is winning and has the ball will have to punt, making the coefficients for each down being negative and increasing ad up. Yards to opponents endzone is negative because as you progress further down the field, the better chance that the team scores, giving up the ball. Conversely to yards to opponents endzone, yards to first down you want to be as small as possible because the closer you are to the first down marker, the better your chances of gaining the first down, and continue to run the clock out. Possession spread is positive because being the favorite and having possession of the ball would increase the chances of that team finishing the game with the ball. The only variable that doesn't make 100% sense to me is score differential. I guess the relationship is there because if a team is getting blown out towards the end of the game, they will only score or turn over the ball on downs, giving the winning team the ball and allowing them to run out the clock. And if the winning team has the ball and is already blowing out the other team, the losing team has less motivation to try and stop the winning team from converting a first down.
+
+### Task 4
+
+```{r}
+predictions_log = predict(mod1, type = "response")
+pbpfull = pbpfull %>% mutate(problog = predictions_log) %>%
+mutate(prob_home_log = ifelse(posteam == home_team, problog , 1-problog))
+```
+
+```{r}
+ggplot(pbpfull,aes(prob_home_log))+
+  geom_histogram()
+```
+
+This visualization shows the distribution of the probability that the home team will win. The counts of the probabilities between 0 and .875 are all very similar and range from around 2000 to 3300. When it passes .875 we see a huge jump in the probability because these account for all the plays where the home team is trouncing the away team, and just running clock.
+
+### Task 5
+
+```{r}
+ggplot(pbpfull,aes(x=problog,y=score_differential))+
+  geom_point()+
+  geom_smooth()
+
+```
+
+The plot above describes the relationship between score differential and the probability that the team with the ball, will also win the game. This relationship is about what I expected with blowout losses having little to no chance of winning and ending up with the ball and vice versa for blowout wins. What I found most interesting was that teams that are winning by <10 points don't have the ball more often. I attribute this to playcallers becoming very conservative down the stretch of games, opting to run the ball 3 times into loaded fronts, to try and kill as much time as possible and rely on their defense to hold the opposing teams offense. 
+
+
+### Task 6
+
+```{r}
+vertical.lines = c(900, 1800, 2700, 3600)
+pbpfull %>% filter(game_id == "2019_01_HOU_NO") %>%
+ggplot(aes(x=game_seconds_remaining,y=prob_home_log)) +
+geom_line(size = 1) +
+theme_bw() +
+scale_x_reverse(breaks=seq(0,3600,by=450)) +
+ylim(0,1) +
+xlab("Game Time Remaining (seconds)") +
+ylab("Home Team Win Probability") +
+geom_vline(xintercept = vertical.lines, color = "red")
+```
+
+The biggest differences between our win probability plot and ESPN's is that ours displays the probability that the Saints win (home team) and does not end the game with the Saints having a 100% chance of winning the game and ESPN plots both teams probabilities to win the game and does end the game with the Saints having a 100% chance of winning the game.
+
+```{r}
+gameid = "2019_01_HOU_NO"
+homeid = pbpfull %>% filter(game_id == gameid) %>% select(home_team) %>% distinct()
+awayid = pbpfull %>% filter(game_id == gameid) %>% select(away_team) %>% distinct()
+vertical.lines = c(900, 1800, 2700, 3600)
+pbpfull %>% filter(game_id == gameid) %>%
+ggplot(aes(x=game_seconds_remaining,y=prob_home_log)) +
+geom_line(size = 1) +
+theme_bw() +
+scale_x_reverse(breaks=seq(0,3600,by=450)) +
+ylim(0,1) +
+xlab("Game Time Remaining (seconds)") +
+ylab("Home Team Win Probability") +
+geom_vline(xintercept = vertical.lines, color = "red") +
+annotate("label", x = 3500, y = .95, label = paste0(homeid$home_team)) +
+annotate("label", x = 3500, y = .05, label = paste0(awayid$away_team))
+```
+
+```{r}
+gameid = "2018_11_KC_LA"
+homeid = pbpfull %>% filter(game_id == gameid) %>% select(home_team) %>% distinct()
+awayid = pbpfull %>% filter(game_id == gameid) %>% select(away_team) %>% distinct()
+vertical.lines = c(900, 1800, 2700, 3600)
+pbpfull %>% filter(game_id == gameid) %>%
+ggplot(aes(x=game_seconds_remaining,y=prob_home_log)) +
+geom_line(size = 1) +
+theme_bw() +
+scale_x_reverse(breaks=seq(0,3600,by=450)) +
+ylim(0,1) +
+xlab("Game Time Remaining (seconds)") +
+ylab("Home Team Win Probability") +
+geom_vline(xintercept = vertical.lines, color = "red") +
+annotate("label", x = 3500, y = .95, label = paste0(homeid$home_team)) +
+annotate("label", x = 3500, y = .05, label = paste0(awayid$away_team))
+
+```
+
+I chose to display one of the crazy NFL games of my lifetime, the Kansas City Chiefs vs LA Rams back in 2018. This was one of the highest scoring games in NFL history, and when watching the game it felt as if either team could have won, but when looking at the win probability chart for the game, you would think that the Rams dominated the Chiefs from most of the game. My win probability chart looks almost identical to the one displayed on ESPN, where the Rams were projected to win most of the game and the Chiefs make a push at the end that comes up short. The biggest difference between the two plots is that ESPN gave the Chiefs an 88.1% chance to win the game at the 2:06 mark. My chart at around the same point, only gave the Chiefs a 60% chance to win the game. Also, similar to the charts above, at the end of the game the Rams don't have a 100% chance of winning the game where on ESPN it does.
+
+### Task 7
+```{r}
+gameid = "2018_11_KC_LA"
+homeid = pbpfull %>% filter(game_id == gameid) %>% select(home_team) %>% distinct()
+awayid = pbpfull %>% filter(game_id == gameid) %>% select(away_team) %>% distinct()
+```
+```{r}
+vertical.lines = c(900, 1800, 2700, 3600)
+pbpfull %>% filter(game_id == "2018_11_KC_LA") %>%
+ggplot(aes(x=game_seconds_remaining,y=prob_home_log)) +
+geom_rect(aes(xmin=0, xmax=3600, ymin=0.5, ymax=1), fill = "#003594", alpha = 1) + #home team color code
+geom_rect(aes(xmin=0, xmax=3600, ymin=0, ymax=0.5), fill = "#FFB81C", alpha = 1) + #away team color code
+geom_line(size = 1) +
+theme_bw() +
+scale_x_reverse(breaks=seq(0,3600,by=450)) +
+ylim(0,1) +
+xlab("Game Time Remaining (seconds)") +
+ylab("Home Team Win Probability") +
+geom_vline(xintercept = vertical.lines, color = "red") +
+annotate("label", x = 3500, y = .95, label = paste0(homeid$home_team)) +
+annotate("label", x = 3500, y = .05, label = paste0(awayid$away_team))
+```
+
