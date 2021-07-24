@@ -1,0 +1,163 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Mod 4 Assignment1 - Expected Points
+## Keith Swartz
+
+### Packages and Data Cleanup
+
+```{r include=FALSE}
+library(tidyverse)
+library(tidymodels)
+```
+```{r include=FALSE}
+pbp <- read_csv("pbp_nextscore.csv")
+```
+```{r include=FALSE}
+pbp = pbp %>% mutate(Next_Score_Half = as_factor(Next_Score_Half)) %>%
+mutate(Next_Score_Half_Num = fct_recode(Next_Score_Half, "-3" = "Opp_Field_Goal",
+"3" = "Field_Goal",
+"6" = "Touchdown",
+"-6" = "Opp_Touchdown",
+"1" = "Extra_Point",
+"0" = "No_Score",
+"2" = "Opp_Safety",
+"-2" = "Safety",
+"2" = "Two_Point_Conversion",
+"-2" = "Opp_Two_Point_Conversion",
+"-1" = "Opp_Extra_Point",
+"-2" = "Opp_Defensive_Two_Point")) %>%
+mutate(Next_Score_Half_Num = as.numeric(as.character(Next_Score_Half_Num)))
+
+pbp = pbp %>% filter(play_type %in% c("field_goal","pass","punt","run"))
+
+pbp = pbp %>% filter(Next_Score_Half %in% c("Field_Goal",
+"Touchdown",
+"Opp_Touchdown",
+"No_Score",
+"Opp_Safety",
+"Safety"
+))
+
+pbp = pbp %>% filter(down != "NA") %>%
+filter(qtr != 5)
+```
+
+### Task 1
+
+```{r}
+ggplot(pbp,aes(x=ep))+
+  geom_histogram()
+
+```
+```{r}
+summary(pbp$ep)
+```
+
+The distribution of expected points is fairly normally distributed with a slight skew to the right. Expected points has a low of -3.23, a max of 6.57, a mean of 2.04, and a median of 1.88.
+
+### Task 2
+
+```{r}
+ggplot(pbp,aes(x=ep))+
+  facet_grid(~ down)+
+  geom_histogram()
+```
+
+As the downs progress, the distributions have less observations and become more dispersed. This makes sense because there are so many different scenarios when it comes to first down and many more play calling options compared to fourth down, when most teams are either punting or trying to convert on a fourth and short.
+
+
+### Task 3
+
+```{r}
+pbp4th= pbp %>% filter(down== "4")
+```
+
+```{r}
+ggplot(pbp4th,aes(x=play_type,y=epa))+
+  geom_boxplot()
+```
+
+The distributions for expected points added by play type for fourth downs are wildly distributed. For field goals, the box plot is very condensed with a median of right around 0, but have a decent amount of outliers beneath the boxplot that are a result of long missed field goals, and blocked field goals. I am very surprised that this median was not closer to three, because most kickers make their field goals. Pass plays are the exact opposite of field goals. This boxplot is widely dispersed but has no apparent outliers and has a median -1.25. Much like the field goal, the punt has a condensed inner quartile range with a median around 0, but unlike the field goal which showed only bad outliers, the punt outliers are dispersed positively and negatively. The observations down by -5 are either  blocked punts or punts that were returned well, and the observations towards 5 are muffed punts, or punts downed within the 5 yard line. The boxplot for run plays and pass plays share a similar shape, but the median is set at around 2.25. This probably due to the fact that when teams are running the ball on fourth down, they are closer to the first down marker, giving the offensive team a much better chance to convert. I would like to look at these same boxplots when the yards to gain is below 2, because I believe that the pass median would be much higher.
+
+
+### Task 4
+
+```{r}
+
+recipe= recipe(Next_Score_Half_Num ~ yardline_100,pbp)
+
+lm_model<- 
+  linear_reg() %>%
+  set_engine("lm")
+
+
+lm_wflow=
+  workflow() %>%
+  add_model(lm_model) %>%
+  add_recipe(recipe)
+
+lm_fit = fit(lm_wflow, pbp)
+
+summary(lm_fit$fit$fit$fit)
+```
+
+This model shows that using yards to opponents endzone is a significant predictor of the next scoring event of the half shown by the variable having a p-value of below 0.05. But, a model exclusively using yards to opponents endzone is not a strong model when predicting the next scoring event of the half because it has a adjusted R-squared of 0.072.
+
+The regression equation goes as follows: y= -.046(yards to opponents endzone) + 4.52
+
+```{r}
+-.046*50+4.52
+
+-.046*80+4.52
+
+-.046*20+4.52
+```
+
+
+1) Midfield (50 yard line) = 2.2
+2) Our own 20 yard line = .84
+3) The opponent's 20 yard line = 3.6
+
+### Task 5
+
+```{r}
+recipe1= recipe(Next_Score_Half_Num ~ yardline_100 + half_seconds_remaining + down + ydstogo , pbp)
+
+lm_model<- 
+  linear_reg() %>%
+  set_engine("lm")
+
+
+lm_wflow=
+  workflow() %>%
+  add_model(lm_model) %>%
+  add_recipe(recipe1)
+
+lm_fit = fit(lm_wflow, pbp)
+
+summary(lm_fit$fit$fit$fit)
+```
+
+Very similar to the model above, all 4 variables are significant predictors of the next scoring event of the half (p-value < 0.05) but is still not very accurate because of its adjusted R-squared of 0.097. This model is better than the model exclusively using yards to opponents endzone but only out performs it by .025.
+
+The regression equation goes as follows: y = -0.047(yards to opponents endzone) + 0.0004(seconds remaing in the half) - 0.645(down) - 0.046(yards to first down) + 5.894
+
+What is the estimated Expected Points value for the following two situations:
+
+```{r}
+-.047*(80) + .0004*(1700) - .645*(1) -.046*(10) + 5.894
+
+-.047*(10) + .0004*(100) - .645*(4) -.046*(12) + 5.894
+```
+
+
+1) We have the ball on our own 20 yard line. There are 1700 seconds remaining in the half. It is 1st down
+and 10 yards to go.
+= 1.709
+
+2) We have the ball on our the opponent’s 10 yard line. There are 100 seconds remaining in the half. It is
+4th down and 12 yards to go.
+= 2.332
